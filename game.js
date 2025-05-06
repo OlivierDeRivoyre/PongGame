@@ -81,7 +81,7 @@ peer.on('error', function (err) {
 peer.on('open', function (id) {
     if (isServer) {
         localStorage.setItem("lastPeerId", peer.id);
-        document.getElementById("myId").innerText = "Other player can join you with: "
+        document.getElementById("myId").innerText = "Other player can join you at: "
             + window.location.origin + window.location.pathname + "?server=" + peer.id;
         const server = new Server();
         server.runTick();
