@@ -6,6 +6,32 @@ const ctx = canvas.getContext("2d");
 window.addEventListener('keydown', keydown, false);
 window.addEventListener('keyup', keyup, false);
 
+let keysPressed = {
+    left: false,
+    right: false,
+    up: false,
+};
+
+function keyPressed(pressed, event) {
+    if (event.keyCode == 37) {
+        keysPressed.left = pressed;
+    }
+    else if (event.keyCode == 39) {
+        keysPressed.right = pressed;
+    }
+    else if (event.keyCode == 38) { // or space
+        keysPressed.up = pressed;
+    }
+}
+function keydown(event) {
+    keyPressed(true, event);
+}
+function keyup(event) {
+    keyPressed(false, event);
+}
+
+
+
 const params = new URLSearchParams(window.location.search);
 const server = params.get("server");
 const isServer = !server;
@@ -58,8 +84,7 @@ peer.on('open', function (id) {
         localStorage.setItem("lastPeerId", peer.id);
         document.getElementById("myId").innerText = "Other player can join you with: "
             + window.location.origin + window.location.pathname + "?server=" + peer.id;
-        myConn = new ServerConnnection();
-        const server = new Server(myConn);
+        const server = new Server();
         server.runTick();
         peer.on('connection', function (conn) {
             //conn.on('data', function (data) {});
@@ -73,28 +98,17 @@ peer.on('open', function (id) {
         const client = new Client(conn);
         myConn = conn;
         // Receive messages
-        conn.on('data', function (data) {
-            client.onData(data);
-        });
+        // conn.on('data', function (data) {
+        //    client.onData(data);
+        // });
         //conn.on('open', function () {});
     }
 
 });
 
-function test() {
-    myConn.send('Hello I m ' + peer.id);
+function square(x) {
+    return x * x;
 }
-
-class ServerConnnection {
-    send(msg) {
-        this.data(msg);
-    }
-    on(eventType, func) {
-        this.data = func;
-    }
-
-}
-
 class Player {
     constructor(id) {
         this.id = id;
@@ -104,9 +118,47 @@ class Player {
         this.color = this.team == 0 ? "red" : "blue";
         this.vx = 0;
         this.radius = 40;
+        this.inputX = 0;
+        this.inputY = false;
+        this.isJumping = false;
+    }
+    updateLocalPlayer() {
+        let changed = false;
+        if (keysPressed.left) {
+            if (this.inputX != -1) {
+                this.inputX = -1;
+                this.vx = 0;
+                changed = true;
+            }
+        } else if (keysPressed.right) {
+            if (this.inputX != 1) {
+                this.inputX = 1;
+                this.vx = 0;
+                changed = true;
+            }
+        } else if (this.inputX != 0) {
+            this.inputX = 0;
+            this.vx = 0;
+            changed = true;
+        }
+        return changed;
     }
     update() {
-        this.x += this.vx * 5;
+        const acc = Math.abs(this.vx) < 10 ? 3 : Math.abs(this.vx) < 15 ? 2 : 1;
+        const newVx = this.vx + this.inputX * acc;
+        const maxVx = this.inputX * 20;
+        if (this.inputX < 0) {
+            this.vx = Math.max(newVx, maxVx);
+        } else if (this.inputX > 0) {
+            this.vx = Math.min(newVx, maxVx);
+        } else {
+            this.vx = 0;
+        }
+        this.x += this.vx;
+
+        let minX = this.team == 0 ? 0 : (CanvasWidth / 2) + World.NetBorder;
+        let maxX = this.team == 0 ? (CanvasWidth / 2) - World.NetBorder : CanvasWidth;
+        this.x = Math.max(minX + this.radius, Math.min(maxX - this.radius, this.x));
     }
     paint() {
         ctx.beginPath();
@@ -114,18 +166,21 @@ class Player {
         ctx.fillStyle = this.color;
         ctx.fill();
     }
+    getMsg() {
+        return { t: 'playerMove', id: this.id, x: this.x, y: this.y, vx: this.vx, vy: this.vy, ix: this.inputX, iy: this.inputY, ij: this.isJumping };
+    }
     onMessage(msg) {
-        if (msg.vx !== undefined) {
+        if (msg.id == this.id && msg.t === 'playerMove') {
+            this.x = msg.x;
             this.vx = msg.vx;
+            this.inputX = msg.ix;
+            //TODO
         }
     }
 }
-function square(x) {
-    return x * x;
-}
-
 class Ball {
     constructor() {
+        this.id = 'ball';
         this.x = 200;
         this.y = 40;
         this.vx = 0;
@@ -133,11 +188,10 @@ class Ball {
         this.radius = 10;
         this.color = "orange";
     }
-    update(players) {
+    update(world, updates) {
         this.vy += 0.8;
         this.x += this.vx;
         this.y += this.vy;
-
         if (this.x <= this.radius) {
             this.x = this.radius;
             this.vx = Math.abs(this.vx);
@@ -146,17 +200,33 @@ class Ball {
             this.x = CanvasWidth - this.radius - 1;
             this.vx = -Math.abs(this.vx);
         }
-        for (let p of players) {
-            if (this.vy > 0 && square(p.x - this.x) + square(p.y - this.y) < square(p.radius + this.radius)) {
-                this.reboundOn(p);
-                return;
+        else if (this.y > CanvasHeight - World.NetHeight) {
+            if (this.vx > 0
+                && this.x > CanvasWidth / 2 - this.radius - World.NetBorder
+                && this.x < CanvasWidth / 2) {
+                this.x = CanvasWidth / 2 - this.radius;
+                this.vx = -Math.abs(this.vx);
+            } else if (this.vx < 0
+                && this.x > CanvasWidth / 2
+                && this.x < CanvasWidth / 2 + this.radius + World.NetBorder) {
+                this.x = CanvasWidth / 2 + this.radius;
+                this.vx = Math.abs(this.vx);
             }
         }
-        if (this.y > CanvasHeight - this.radius) {
+        let p = world.localPlayer;
+        if (this.vy > 0
+            && this.y < p.y
+            && square(p.x - this.x) + square(p.y - this.y) < square(p.radius + this.radius)) {
+            this.reboundOn(p);
+            updates.push(this.getMsg());
+            return;
+        }
+        if (world.isServer && this.y > CanvasHeight + 200) {
             this.x = 200;
             this.y = 40;
             this.vx = 0;
             this.vy = 0;
+            updates.push(this.getMsg());
             return;
         }
     }
@@ -178,53 +248,89 @@ class Ball {
         ctx.fillStyle = this.color;
         ctx.fill();
     }
+    getMsg() {
+        return { t: 'throwBall', id: this.id, x: this.x, y: this.y, vx: this.vx, vy: this.vy };
+    }
+    onMessage(msg) {
+        if (msg.id == this.id && msg.t === 'throwBall') {
+            this.x = msg.x;
+            this.y = msg.y;
+            this.vx = msg.vx;
+            this.vy = msg.vy;
+        }
+    }
 }
 
 class World {
-    constructor() {
-        this.players = [];
+    static NetHeight = 80;
+    static NetBorder = 4;
+    constructor(isServer, players, localPlayerId) {
+        this.isServer = isServer;
+        this.players = players;
         this.ball = new Ball();
+        this.localPlayer = players.find(p => p.id == localPlayerId);
+        if (!this.localPlayer) {
+            throw new Error(`Player not found ${localPlayerId}`);
+        }
     }
     update() {
+        const changed = this.localPlayer.updateLocalPlayer();
         for (let p of this.players) {
             p.update();
         }
-        this.ball.update(this.players);
+        const updates = [];
+        if (changed) {
+            updates.push(this.localPlayer.getMsg());
+        }
+        this.ball.update(this, updates);
+        return updates;
     }
     paint() {
         ctx.clearRect(0, 0, canvas.width, canvas.height);
+        this.paintNet();
         for (let p of this.players) {
             p.paint();
         }
         this.ball.paint();
     }
-    toMsg() {
+    paintNet() {
+        ctx.beginPath();
+        ctx.lineWidth = "0";
+        ctx.fillStyle = "green";
+        ctx.rect(CanvasWidth / 2 - World.NetBorder, CanvasHeight - World.NetHeight, 2 * World.NetBorder, World.NetHeight);
+        ctx.fill();
+    }
+    getNewWorldMsg() {
         return {
-            t: 'world',
+            t: 'newWorld',
             p: this.players.map(p => { return { id: p.id, x: p.x, y: p.y } }),
-            b: { x: this.ball.x, y: this.ball.y }
+            b: { x: this.ball.x, y: this.ball.y },
+            yourId: '',
         }
     }
-    updateFrom(msg) {
-        if (this.players.length != msg.p.length) {
-            this.players = msg.p.map(p => new Player(p.id));
+    static newWorld(msg) {
+        const players = msg.p.map(p => new Player(p.id));
+        const world = new World(false, players, msg.yourId);
+        world.ball.x = msg.b.x;
+        world.ball.y = msg.b.y;
+        return world;
+    }
+    onUpdates(updates) {
+        for (let m of updates) {
+            for (let p of this.players) {
+                p.onMessage(m);
+            }
+            this.ball.onMessage(m);
         }
-        for (let i = 0; i < this.players.length; i++) {
-            this.players[i].x = msg.p[i].x;
-            this.players[i].y = msg.p[i].y;
-        }
-        this.ball.x = msg.b.x;
-        this.ball.y = msg.b.y;
-        this.paint();
     }
 }
 
 class Server {
     static tickDuration = 1000.0 / 30;
-    constructor(fakeConn) {
+    constructor() {
         this.connections = [];
-        this.world = new World();
-        this.onConnect(fakeConn)
+        const serverPlayer = new Player(0);
+        this.world = new World(true, [serverPlayer], serverPlayer.id);
     }
     onConnect(conn) {
         this.connections.push(conn);
@@ -236,22 +342,34 @@ class Server {
         conn.on('data', function (data) {
             self.onReceiveMsg(p, data);
         });
+        this.sendWorld();
     }
     runTick() {
-        this.world.update();
+        const updates = this.world.update();
+        if (updates.length != 0) {
+            this.broadcastAll({ t: 'updates', updates });
+        }
         this.world.paint();
-        this.sendWorld();
         setTimeout(() => this.runTick(), Server.tickDuration);
     }
-    sendWorld() {
-        const msg = this.world.toMsg();
+    broadcastAll(msg) {
         for (let c of this.connections) {
             c.send(msg);
         }
     }
-    onReceiveMsg(player, data) {
-        if (data.t == 'patch') {
-            player.onMessage(data);
+    sendWorld() {
+        const msg = this.world.getNewWorldMsg();
+        for (let c of this.connections) {
+            msg.yourId = c.player.id;
+            c.send(msg);
+        }
+    }
+    onReceiveMsg(player, msg) {
+        if (msg.t == 'updates') {
+            this.world.onUpdates(msg.updates);
+            for (let c of this.connections.filter(c => c.player.id != player.id)) {
+                c.send(msg);
+            }
         }
     }
 }
@@ -259,23 +377,30 @@ class Server {
 class Client {
     constructor(conn) {
         this.connection = conn;
-        this.world = new World();
+        this.world = null;
+        const self = this;
+        conn.on('data', function (data) {
+            self.onData(data);
+        });
+        this.runTick();
+    }
+    runTick() {
+        if (this.world != null) {
+            const updates = this.world.update();
+            if (updates.length != 0) {
+                this.connection.send({ t: 'updates', updates });
+            }
+            this.world.paint();
+        }
+        setTimeout(() => this.runTick(), Server.tickDuration);
     }
     onData(msg) {
-        if (msg.t == 'world') {
-            this.world.updateFrom(msg);
+        if (msg.t == 'newWorld') {
+            this.world = World.newWorld(msg);
+        }
+        if (msg.t == 'updates' && this.world != null) {
+            this.world.onUpdates(msg.updates);
         }
     }
 }
 
-function keydown(event) {
-    if (event.keyCode == 37 || event.keyCode == 39) {
-        myConn.send({ t: "patch", vx: event.keyCode == 37 ? -1 : 1 });
-    }
-}
-
-function keyup(event) {
-    if (event.keyCode == 37 || event.keyCode == 39) {
-        myConn.send({ t: "patch", vx: 0 });
-    }
-}
