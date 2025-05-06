@@ -10,12 +10,44 @@ const params = new URLSearchParams(window.location.search);
 const server = params.get("server");
 const isServer = !server;
 let lastPeerId = localStorage.getItem("lastPeerId");
+let ice = {
+    config: {
+        iceServers: [
+            {
+                "urls": "stun:stun.relay.metered.ca:80"
+            },
+            {
+                'urls': 'stun:stun.l.google.com:19302'
+            },
+            {
+                "urls": "turns:global.relay.metered.ca:443?transport=tcp",
+                "username": "2741418185fbd3aac2c7aeb4",
+                "credential": "00nktyd7tIflZllh"
+            },
+            {
+                "urls": "turn:global.relay.metered.ca:80",
+                "username": "2741418185fbd3aac2c7aeb4",
+                "credential": "00nktyd7tIflZllh"
+            },
+            {
+                "urls": "turn:global.relay.metered.ca:80?transport=tcp",
+                "username": "2741418185fbd3aac2c7aeb4",
+                "credential": "00nktyd7tIflZllh"
+            },
+            {
+                "urls": "turn:global.relay.metered.ca:443",
+                "username": "2741418185fbd3aac2c7aeb4",
+                "credential": "00nktyd7tIflZllh"
+            },
+        ]
+    }
+};
 let peer;
 if (isServer && lastPeerId) {
-    peer = new Peer(lastPeerId);
+    peer = new Peer(lastPeerId, ice);
 }
 else {
-    peer = new Peer();
+    peer = new Peer(undefined, ice);
 }
 peer.on('error', function (err) {
     console.log(err);
