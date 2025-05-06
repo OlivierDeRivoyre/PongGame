@@ -190,36 +190,38 @@ class Ball {
     }
     update(world, updates) {
         this.vy += 0.8;
-        this.x += this.vx;
-        this.y += this.vy;
-        if (this.x <= this.radius) {
-            this.x = this.radius;
-            this.vx = Math.abs(this.vx);
-        }
-        else if (this.x >= CanvasWidth - this.radius - 1) {
-            this.x = CanvasWidth - this.radius - 1;
-            this.vx = -Math.abs(this.vx);
-        }
-        else if (this.y > CanvasHeight - World.NetHeight) {
-            if (this.vx > 0
-                && this.x > CanvasWidth / 2 - this.radius - World.NetBorder
-                && this.x < CanvasWidth / 2) {
-                this.x = CanvasWidth / 2 - this.radius;
-                this.vx = -Math.abs(this.vx);
-            } else if (this.vx < 0
-                && this.x > CanvasWidth / 2
-                && this.x < CanvasWidth / 2 + this.radius + World.NetBorder) {
-                this.x = CanvasWidth / 2 + this.radius;
+        for (let i = 0; i < 10; i++) {
+            this.x += this.vx / 10;
+            this.y += this.vy / 10;
+            if (this.x <= this.radius) {
+                this.x = this.radius;
                 this.vx = Math.abs(this.vx);
             }
-        }
-        let p = world.localPlayer;
-        if (this.vy > 0
-            && this.y < p.y
-            && square(p.x - this.x) + square(p.y - this.y) < square(p.radius + this.radius)) {
-            this.reboundOn(p);
-            updates.push(this.getMsg());
-            return;
+            else if (this.x >= CanvasWidth - this.radius - 1) {
+                this.x = CanvasWidth - this.radius - 1;
+                this.vx = -Math.abs(this.vx);
+            }
+            else if (this.y > CanvasHeight - World.NetHeight) {
+                if (this.vx > 0
+                    && this.x > CanvasWidth / 2 - this.radius - World.NetBorder
+                    && this.x < CanvasWidth / 2) {
+                    this.x = CanvasWidth / 2 - this.radius;
+                    this.vx = -Math.abs(this.vx);
+                } else if (this.vx < 0
+                    && this.x > CanvasWidth / 2
+                    && this.x < CanvasWidth / 2 + this.radius + World.NetBorder) {
+                    this.x = CanvasWidth / 2 + this.radius;
+                    this.vx = Math.abs(this.vx);
+                }
+            }
+            let p = world.localPlayer;
+            if (this.vy > 0
+                && this.y < p.y
+                && square(p.x - this.x) + square(p.y - this.y) < square(p.radius + this.radius)) {
+                this.reboundOn(p);
+                updates.push(this.getMsg());
+                return;
+            }
         }
         if (world.isServer && this.y > CanvasHeight + 200) {
             this.x = 200;
@@ -229,6 +231,7 @@ class Ball {
             updates.push(this.getMsg());
             return;
         }
+
     }
     reboundOn(player) {
         const speed = Math.sqrt(square(this.vy) + square(this.vx));
