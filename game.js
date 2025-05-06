@@ -178,7 +178,6 @@ class Player {
         this.vy = Math.min(20, this.vy + accY);
     }
     updateStep(ratio) {
-
         this.x += this.vx * ratio;
         let minX = this.team == 0 ? 0 : (CanvasWidth / 2) + World.NetBorder;
         let maxX = this.team == 0 ? (CanvasWidth / 2) - World.NetBorder : CanvasWidth;
@@ -186,6 +185,7 @@ class Player {
         this.y += this.vy * ratio;
         if (this.y >= CanvasHeight) {
             this.y = CanvasHeight;
+            this.vy = 0;
             this.isJumping = false;
         }
     }
@@ -269,14 +269,17 @@ class Ball {
 
     }
     reboundOn(player) {
-        const speed = Math.sqrt(square(this.vy) + square(this.vx));
-        const initialBallAngus = Math.atan2(this.vy, this.vx);
+        const playerWeightX = 0.2;
+        const playerWeightY = 0.05;
+        const relativeSpeed = { vx: this.vx - player.vx * playerWeightX, vy: this.vy - player.vy * playerWeightY};
+        const speed = Math.sqrt(square(relativeSpeed.vy) + square(relativeSpeed.vx));
+        const initialBallAngus = Math.atan2(relativeSpeed.vy, relativeSpeed.vx);
         const tangentAngus = Math.atan2(this.y - player.y, this.x - player.x);
         const angusOnTangent = initialBallAngus - tangentAngus - Math.PI / 2;
         const newAngusOnTangent = Math.atan2(-Math.sin(angusOnTangent), Math.cos(angusOnTangent));
         const newBallAngus = newAngusOnTangent + tangentAngus + Math.PI / 2;
-        this.vx = speed * Math.cos(newBallAngus);
-        this.vy = speed * Math.sin(newBallAngus);
+        this.vx = player.vx * playerWeightX + speed * Math.cos(newBallAngus);
+        this.vy = player.vy * playerWeightY + speed * Math.sin(newBallAngus);
         this.x = player.x + (player.radius + this.radius) * Math.cos(tangentAngus);
         this.y = player.y + (player.radius + this.radius) * Math.sin(tangentAngus);
     }
