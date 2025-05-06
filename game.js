@@ -223,7 +223,7 @@ class Ball {
     updateSpeed() {
         this.vy += 0.8;
     }
-    updateStep(ratio, world, updates) {
+    updateStep(ratio, world) {
         this.x += this.vx * ratio;
         this.y += this.vy * ratio;
         if (this.x <= this.radius) {
@@ -247,24 +247,19 @@ class Ball {
                 this.vx = Math.abs(this.vx);
             }
         }
-        if (updates.length != 0) {
-            return;
-        }
         let p = world.localPlayer;
         if (this.vy > 0
             && this.y < p.y
             && square(p.x - this.x) + square(p.y - this.y) < square(p.radius + this.radius)) {
-            this.reboundOn(p);
-            updates.push(this.getMsg());
-            return;
+            this.reboundOn(p);            
+            return this.getMsg();
         }
         if (world.isServer && this.y > CanvasHeight + 200) {
             this.x = 200;
             this.y = 40;
             this.vx = 0;
-            this.vy = 0;
-            updates.push(this.getMsg());
-            return;
+            this.vy = 0;            
+            return this.getMsg();
         }
     }
     reboundOn(player) {
@@ -335,7 +330,11 @@ class World {
             for (let p of this.players) {
                 p.updateStep(ratio);
             }
-            this.ball.updateStep(ratio, this, updates);
+            const update = this.ball.updateStep(ratio, this);
+            if(update != null){
+                updates.push(update);
+                break;
+            }
         }
         if (changed) {
             updates.push(this.localPlayer.getMsg());
