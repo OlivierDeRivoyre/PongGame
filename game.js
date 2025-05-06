@@ -19,7 +19,7 @@ function keyPressed(pressed, event) {
     else if (event.keyCode == 39) {
         keysPressed.right = pressed;
     }
-    else if (event.keyCode == 38) { // or space
+    else if (event.keyCode == 38 || event.keyCode == 32) { // up or space
         keysPressed.up = pressed;
     }
 }
@@ -94,7 +94,7 @@ peer.on('open', function (id) {
     } else {
         const conn = peer.connect(server);
         const client = new Client(conn);
-        client .runTick();
+        client.runTick();
     }
 
 });
@@ -103,6 +103,7 @@ function square(x) {
     return x * x;
 }
 class Player {
+    static JumpMax = 80;
     constructor(id) {
         this.id = id;
         this.team = id % 2;
@@ -134,24 +135,57 @@ class Player {
             this.vx = 0;
             changed = true;
         }
+        if (keysPressed.up) {
+            if (!this.inputY && !this.isJumping) {
+                this.inputY = true;
+                changed = true;
+            }
+        } else if (this.inputY) {
+            this.inputY = false;
+            changed = true;
+        }
         return changed;
     }
     update() {
-        const acc = Math.abs(this.vx) < 10 ? 3 : Math.abs(this.vx) < 15 ? 2 : 1;
-        const newVx = this.vx + this.inputX * acc;
+        let accX = Math.abs(this.vx) < 10 ? 3 : Math.abs(this.vx) < 15 ? 2 : 1;
+        if (this.isJumping) {
+            accX *= 0.20;
+        }
+        const newVx = this.vx + this.inputX * accX;
         const maxVx = this.inputX * 20;
         if (this.inputX < 0) {
             this.vx = Math.max(newVx, maxVx);
         } else if (this.inputX > 0) {
             this.vx = Math.min(newVx, maxVx);
-        } else {
+        } else if (!this.isJumping) {
             this.vx = 0;
         }
         this.x += this.vx;
-
         let minX = this.team == 0 ? 0 : (CanvasWidth / 2) + World.NetBorder;
         let maxX = this.team == 0 ? (CanvasWidth / 2) - World.NetBorder : CanvasWidth;
         this.x = Math.max(minX + this.radius, Math.min(maxX - this.radius, this.x));
+
+        if (this.inputY && !this.isJumping) {
+            this.vy = -20;
+            this.isJumping = true;
+        }
+        if (!this.isJumping) {
+            return;
+        }
+        let accY = 2;
+        if (this.inputY && this.vy < 0 && this.y > CanvasHeight - Player.JumpMax) {
+            accY = 0;
+        }
+        if (!this.inputY && this.vy < 0) {
+            this.vy = 0;
+        }
+        this.vy = Math.min(20, this.vy + accY);
+        this.y += this.vy;
+        if (this.y >= CanvasHeight) {
+            this.y = CanvasHeight;
+            this.isJumping = false;
+        }
+
     }
     paint() {
         ctx.beginPath();
@@ -165,9 +199,12 @@ class Player {
     onMessage(msg) {
         if (msg.id == this.id && msg.t === 'playerMove') {
             this.x = msg.x;
+            this.y = msg.y;
             this.vx = msg.vx;
+            this.vy = msg.vy;
             this.inputX = msg.ix;
-            //TODO
+            this.inputY = msg.iy;
+            this.isJumping = msg.ij;
         }
     }
 }
@@ -377,7 +414,7 @@ class Client {
         const self = this;
         conn.on('data', function (data) {
             self.onData(data);
-        });      
+        });
     }
     runTick() {
         if (this.world != null) {
