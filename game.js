@@ -78,7 +78,6 @@ else {
 peer.on('error', function (err) {
     console.log(err);
 })
-let myConn = null;
 peer.on('open', function (id) {
     if (isServer) {
         localStorage.setItem("lastPeerId", peer.id);
@@ -93,15 +92,9 @@ peer.on('open', function (id) {
             });
         });
     } else {
-
         const conn = peer.connect(server);
         const client = new Client(conn);
-        myConn = conn;
-        // Receive messages
-        // conn.on('data', function (data) {
-        //    client.onData(data);
-        // });
-        //conn.on('open', function () {});
+        client .runTick();
     }
 
 });
@@ -384,8 +377,7 @@ class Client {
         const self = this;
         conn.on('data', function (data) {
             self.onData(data);
-        });
-        this.runTick();
+        });      
     }
     runTick() {
         if (this.world != null) {
