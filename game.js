@@ -109,7 +109,7 @@ class Player {
         this.team = id % 2;
         this.x = 200 + this.team * 400;
         this.y = CanvasHeight - 0;
-        this.color = this.team == 0 ? "red" : "blue";
+        this.color = "blue";
         this.vx = 0;
         this.vy = 0;
         this.radius = 40;
@@ -266,7 +266,6 @@ class Ball {
             updates.push(this.getMsg());
             return;
         }
-
     }
     reboundOn(player) {
         const playerWeightX = 0.2;
@@ -313,6 +312,16 @@ class World {
         if (!this.localPlayer) {
             throw new Error(`Player not found ${localPlayerId}`);
         }
+        this.localPlayer.color = 'red';        
+    }
+    addPlayer(player){
+        this.players.push(player);
+        for(let teamId of [0,1]){
+            const team = this.players.filter(p => p.team == teamId);
+            for(let p of team){
+                p.radius = 40 / team.length;
+            }
+        }
     }
     update() {
         const changed = this.localPlayer.updateLocalPlayer();
@@ -351,13 +360,19 @@ class World {
     getNewWorldMsg() {
         return {
             t: 'newWorld',
-            p: this.players.map(p => { return { id: p.id, x: p.x, y: p.y } }),
+            p: this.players.map(p => { return { id: p.id, x: p.x, y: p.y, r: p.radius } }),
             b: { x: this.ball.x, y: this.ball.y },
             yourId: '',
         }
     }
     static newWorld(msg) {
-        const players = msg.p.map(p => new Player(p.id));
+        const players = msg.p.map(p => {
+            let player = new Player(p.id);
+            player.x = p.x;
+            player.y = p.y;
+            player.radius = p.r;
+            return player;
+        });
         const world = new World(false, players, msg.yourId);
         world.ball.x = msg.b.x;
         world.ball.y = msg.b.y;
@@ -385,7 +400,7 @@ class Server {
         const p = new Player(this.world.players.length);
         p.connection = conn;
         conn.player = p;
-        this.world.players.push(p);
+        this.world.addPlayer(p);
         const self = this;
         conn.on('data', function (data) {
             self.onReceiveMsg(p, data);
