@@ -37,38 +37,62 @@ let lastPeerId = localStorage.getItem("lastPeerId");
 if (!isServer || !lastPeerId) {
     lastPeerId = undefined;
 }
+const logName = isServer ? 'SERVER' : 'CLIENT';
 
 async function initPeer() {
     const iceToken = "WQe3H2X3uc01WkyRats9lpPp+5vRLYTJZkXRCn11Cy8EkczuRznplSXwjdTxFjnCtbVu3/RGTP2yaAUC8yP59TAXMuxG9gxAc2BrdHocOjfKg61NYFZdZcnXWwk9YAq74iQugGWZrWwquR89HswYDIp6VZnoMYifdLzJCy/oRYDrrt7DOO/HxKcuXVWAxPx3+18BNKfPRV1NtPejGcDrStMIY3gHvkEJ3GH05P77JXt6C/tL/daIpjUM3DIKvVJhgTBYB9zW13zH7wCuZjAUR33dNGPv5dOXzs5k96AGiC4rM8U+z2o6FJnFHsQSl3BATRYKpCyGuLfighdMuBEjEqfbwrzpaFUTZLmzDYHaS7F/9Wu26KYOtaKugx/SV6G74ZKcE00MafVr5pbwY31dOXX17yadUabWq46ldpXYlMDLwxPrWFmLpEDYaM2/pzC7bzpqtluYw5QynalsSwAhSvACvMmcM+x33yZbvcTAOUJ5PnDGWBLR9wJCWZtwIDlkyOYzMBwpaiH5XwIrabrWRmBXc9tB/1Xi/C1/8vzSNRaLAcFDbXbqJbNfdgD05IIwicgggNQxPmMbOb3pUylaUjzjHxR1/XRpCW6fKtpZ5Sk6pMkIoERZ9t/jWCq6LsYiOrmTqdEtatC8qb+je346tHG43BTB5dmvZEIYgOkYib7ao1iEHXZNe5dosFSHaQs1IRACbfKYRM/mZ+IA42pUKAB3f7KuDqbyrWNeAkKObb0t3xWkKHh9aa8jlTeKRLQBYjMdy0cul+kne/XUdsHY4c/FuzdYvle0Sdcrd/RxeHOF0fjjWal2MaRYZw==";
     let peer;
-    try{
-        peer = new Peer(lastPeerId, JSON.parse(await aesGcmDecrypt(iceToken, window.location.host)));        
+    try {
+        peer = new Peer(lastPeerId, JSON.parse(await aesGcmDecrypt(iceToken, window.location.host)));
     } catch {
         peer = new Peer(lastPeerId);
         console.log('Use default PeerJS config');
-    }   
+    }
     peer.on('error', function (err) {
-        console.log(err);
+        console.log(logName + ': Peer error:' + err);
+    });
+    peer.on('disconnected', function () {
+        console.log(logName + ': peer disconnected');
+        setTimeout(() => {
+            console.log(logName + ': peer.reconnect()');
+            peer.reconnect();
+        }, 3000);
     })
+    peer.on('close', function (err) {
+        console.log(logName + ': close:' + err);
+    });
+    let firstOpen = true;
+    let client = null;
     peer.on('open', function (id) {
+        if (!firstOpen) {
+            console.log(logName + ': peer re-opened');
+        } else {
+
+            console.log(logName + ': peer opened');
+        }
         if (isServer) {
+            if (!firstOpen) {
+                return;
+            }
             localStorage.setItem("lastPeerId", peer.id);
             document.getElementById("myId").innerText = "Other player can join you at: "
                 + window.location.origin + window.location.pathname + "?server=" + peer.id;
             const server = new Server();
             server.runTick();
             peer.on('connection', function (conn) {
-                //conn.on('data', function (data) {});
+                console.log(logName + ': Received a client connection: ' + conn.peer);
                 conn.on('open', function () {
                     server.onConnect(conn);
                 });
             });
         } else {
-            const conn = peer.connect(server);
-            const client = new Client(conn);
-            client.runTick();
-        }
 
+            if (client == null) {
+                client = new Client(peer);
+                client.runTick();
+            }
+        }
+        firstOpen = false;
     });
 }
 initPeer();
@@ -283,14 +307,35 @@ class World {
         }
         this.localPlayer.color = 'red';
     }
-    addPlayer(player) {
-        this.players.push(player);
+    arrangeTeams() {
+        let changed = false;
+        for (let i = 0; i < this.players.length; i++) {
+            const newTeam = i % 2;
+            if (this.players[i].team != newTeam) {
+                this.players[i].team = newTeam;
+                changed = true;
+            }
+        }
         for (let teamId of [0, 1]) {
             const team = this.players.filter(p => p.team == teamId);
             for (let p of team) {
-                p.radius = 40 / team.length;
+                let newRadius = Math.ceil(40 / team.length);
+                if (p.radius != newRadius) {
+                    p.radius = newRadius;
+                    changed = true;
+                }
             }
         }
+        if (changed) {
+            for (let teamId of [0, 1]) {
+                const team = this.players.filter(p => p.team == teamId);
+                const center = 200 + teamId * CanvasWidth / 2;
+                for (let i = 1; i < team.length; i++) {
+                    team[i].x = center + ((i % 2 == 0) ? 1 : -1) * 100;
+                }
+            }
+        }
+        return changed;
     }
     update() {
         const changed = this.localPlayer.updateLocalPlayer();
@@ -333,7 +378,7 @@ class World {
     getNewWorldMsg() {
         return {
             t: 'newWorld',
-            p: this.players.map(p => { return { id: p.id, x: p.x, y: p.y, r: p.radius } }),
+            p: this.players.map(p => { return { id: p.id, x: p.x, y: p.y, r: p.radius, t: p.team } }),
             b: { x: this.ball.x, y: this.ball.y },
             yourId: '',
         }
@@ -344,6 +389,7 @@ class World {
             player.x = p.x;
             player.y = p.y;
             player.radius = p.r;
+            player.team = p.t;
             return player;
         });
         const world = new World(false, players, msg.yourId);
@@ -367,20 +413,62 @@ class Server {
         this.connections = [];
         const serverPlayer = new Player(0);
         this.world = new World(true, [serverPlayer], serverPlayer.id);
+        this.tickCount = 0;
     }
     onConnect(conn) {
-        this.connections.push(conn);
-        const p = new Player(this.world.players.length);
-        p.connection = conn;
-        conn.player = p;
-        this.world.addPlayer(p);
-        const self = this;
-        conn.on('data', function (data) {
-            self.onReceiveMsg(p, data);
-        });
+        if (!this.isARefreshOfExistingConnection(conn)) {
+            this.connections.push(conn);
+            const player = new Player(this.world.players.length);
+            this.world.players.push(player);
+            this.initConnection(conn, player);
+        }
+        this.removeUnconnectedClients();
+        this.world.arrangeTeams();
         this.sendWorld();
     }
+    isARefreshOfExistingConnection(conn) {
+        for (let i = 0; i < this.connections.length; i++) {
+            if (this.connections[i].peer == conn.peer) {
+                const player = this.connections[i].player;
+                console.log(logName + `: Player ${player.id} has reconnected`);
+                this.initConnection(conn, player);
+                this.connections[i] = conn;
+                return true;
+            }
+        }
+        return false;
+    }
+    initConnection(conn, player) {
+        player.connection = conn;
+        conn.player = player;
+        const self = this;
+        conn.on('data', function (data) {
+            self.onReceiveMsg(player, data);
+        });
+    }
+    removeUnconnectedClients() {
+        let changed = false;
+        for (let i = 0; i < this.connections.length; i++) {
+            if (this.connections[i].peerConnection == null || this.connections[i].peerConnection.connectionState != 'connected') {
+                this.connections.splice(i, 1);
+            }
+        }
+        for (let i = 1; i < this.world.players.length; i++) {// index 0 is the server player
+            if (this.world.players[i].connection.peerConnection == null || this.world.players[i].connection.peerConnection.connectionState != 'connected') {
+                this.world.players.splice(i, 1);
+                changed = true;
+            }
+        }
+        return changed;
+    }
     runTick() {
+        this.tickCount++;
+        if (this.tickCount % 30 == 0) {
+            if (this.removeUnconnectedClients()) {
+                this.world.arrangeTeams();
+                this.sendWorld();
+            }
+        }
         const updates = this.world.update();
         if (updates.length != 0) {
             this.broadcastAll({ t: 'updates', updates });
@@ -411,15 +499,31 @@ class Server {
 }
 
 class Client {
-    constructor(conn) {
-        this.connection = conn;
+    constructor(peer) {
+        this.peer = peer;
+        this.connection = null;
         this.world = null;
-        const self = this;
-        conn.on('data', function (data) {
-            self.onData(data);
-        });
+        this.tickNumber = 0;
+        this.lastConnectTick = -999999;
+        this.refreshConnection();
+    }
+    refreshConnection() {
+        if (this.connection == null || this.connection.peerConnection == null
+            || (this.connection.peerConnection.connectionState != 'connected' && (this.tickNumber - this.lastConnectTick) / 30 > 10)) {
+            console.log(logName + ': connect to server');
+            this.connection = this.peer.connect(server);
+            this.lastConnectTick = this.tickNumber;
+            const self = this;
+            this.connection.on('data', function (data) {
+                self.onData(data);
+            });
+        }
     }
     runTick() {
+        this.tickNumber++;
+        if (this.tickNumber % 15 == 0) {
+            this.refreshConnection();
+        }
         if (this.world != null) {
             const updates = this.world.update();
             if (updates.length != 0) {
