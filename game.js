@@ -30,74 +30,47 @@ function keyup(event) {
     keyPressed(false, event);
 }
 
-
-
 const params = new URLSearchParams(window.location.search);
 const server = params.get("server");
 const isServer = !server;
 let lastPeerId = localStorage.getItem("lastPeerId");
-let ice = {
-    config: {
-        iceServers: [
-            {
-                "urls": "stun:stun.relay.metered.ca:80"
-            },
-            {
-                'urls': 'stun:stun.l.google.com:19302'
-            },
-            {
-                "urls": "turns:global.relay.metered.ca:443?transport=tcp",
-                "username": "2741418185fbd3aac2c7aeb4",
-                "credential": "00nktyd7tIflZllh"
-            },
-            {
-                "urls": "turn:global.relay.metered.ca:80",
-                "username": "2741418185fbd3aac2c7aeb4",
-                "credential": "00nktyd7tIflZllh"
-            },
-            {
-                "urls": "turn:global.relay.metered.ca:80?transport=tcp",
-                "username": "2741418185fbd3aac2c7aeb4",
-                "credential": "00nktyd7tIflZllh"
-            },
-            {
-                "urls": "turn:global.relay.metered.ca:443",
-                "username": "2741418185fbd3aac2c7aeb4",
-                "credential": "00nktyd7tIflZllh"
-            },
-        ]
-    }
-};
-let peer;
-if (isServer && lastPeerId) {
-    peer = new Peer(lastPeerId, ice);
+if (!isServer || !lastPeerId) {
+    lastPeerId = undefined;
 }
-else {
-    peer = new Peer(undefined, ice);
-}
-peer.on('error', function (err) {
-    console.log(err);
-})
-peer.on('open', function (id) {
-    if (isServer) {
-        localStorage.setItem("lastPeerId", peer.id);
-        document.getElementById("myId").innerText = "Other player can join you at: "
-            + window.location.origin + window.location.pathname + "?server=" + peer.id;
-        const server = new Server();
-        server.runTick();
-        peer.on('connection', function (conn) {
-            //conn.on('data', function (data) {});
-            conn.on('open', function () {
-                server.onConnect(conn);
-            });
-        });
-    } else {
-        const conn = peer.connect(server);
-        const client = new Client(conn);
-        client.runTick();
-    }
 
-});
+async function initPeer() {
+    const iceToken = "WQe3H2X3uc01WkyRats9lpPp+5vRLYTJZkXRCn11Cy8EkczuRznplSXwjdTxFjnCtbVu3/RGTP2yaAUC8yP59TAXMuxG9gxAc2BrdHocOjfKg61NYFZdZcnXWwk9YAq74iQugGWZrWwquR89HswYDIp6VZnoMYifdLzJCy/oRYDrrt7DOO/HxKcuXVWAxPx3+18BNKfPRV1NtPejGcDrStMIY3gHvkEJ3GH05P77JXt6C/tL/daIpjUM3DIKvVJhgTBYB9zW13zH7wCuZjAUR33dNGPv5dOXzs5k96AGiC4rM8U+z2o6FJnFHsQSl3BATRYKpCyGuLfighdMuBEjEqfbwrzpaFUTZLmzDYHaS7F/9Wu26KYOtaKugx/SV6G74ZKcE00MafVr5pbwY31dOXX17yadUabWq46ldpXYlMDLwxPrWFmLpEDYaM2/pzC7bzpqtluYw5QynalsSwAhSvACvMmcM+x33yZbvcTAOUJ5PnDGWBLR9wJCWZtwIDlkyOYzMBwpaiH5XwIrabrWRmBXc9tB/1Xi/C1/8vzSNRaLAcFDbXbqJbNfdgD05IIwicgggNQxPmMbOb3pUylaUjzjHxR1/XRpCW6fKtpZ5Sk6pMkIoERZ9t/jWCq6LsYiOrmTqdEtatC8qb+je346tHG43BTB5dmvZEIYgOkYib7ao1iEHXZNe5dosFSHaQs1IRACbfKYRM/mZ+IA42pUKAB3f7KuDqbyrWNeAkKObb0t3xWkKHh9aa8jlTeKRLQBYjMdy0cul+kne/XUdsHY4c/FuzdYvle0Sdcrd/RxeHOF0fjjWal2MaRYZw==";
+    let peer;
+    try{
+        peer = new Peer(lastPeerId, JSON.parse(await aesGcmDecrypt(iceToken, window.location.host)));
+    } catch {
+        peer = new Peer(lastPeerId, {config: {iceServers: [{'urls': 'stun:stun.l.google.com:19302'}]}});
+    }   
+    peer.on('error', function (err) {
+        console.log(err);
+    })
+    peer.on('open', function (id) {
+        if (isServer) {
+            localStorage.setItem("lastPeerId", peer.id);
+            document.getElementById("myId").innerText = "Other player can join you at: "
+                + window.location.origin + window.location.pathname + "?server=" + peer.id;
+            const server = new Server();
+            server.runTick();
+            peer.on('connection', function (conn) {
+                //conn.on('data', function (data) {});
+                conn.on('open', function () {
+                    server.onConnect(conn);
+                });
+            });
+        } else {
+            const conn = peer.connect(server);
+            const client = new Client(conn);
+            client.runTick();
+        }
+
+    });
+}
+initPeer();
 
 function square(x) {
     return x * x;
@@ -251,21 +224,21 @@ class Ball {
         if (this.vy > 0
             && this.y < p.y
             && square(p.x - this.x) + square(p.y - this.y) < square(p.radius + this.radius)) {
-            this.reboundOn(p);            
+            this.reboundOn(p);
             return this.getMsg();
         }
         if (world.isServer && this.y > CanvasHeight + 200) {
             this.x = 200;
             this.y = 40;
             this.vx = 0;
-            this.vy = 0;            
+            this.vy = 0;
             return this.getMsg();
         }
     }
     reboundOn(player) {
         const playerWeightX = 0.2;
         const playerWeightY = 0.05;
-        const relativeSpeed = { vx: this.vx - player.vx * playerWeightX, vy: this.vy - player.vy * playerWeightY};
+        const relativeSpeed = { vx: this.vx - player.vx * playerWeightX, vy: this.vy - player.vy * playerWeightY };
         const speed = Math.sqrt(square(relativeSpeed.vy) + square(relativeSpeed.vx));
         const initialBallAngus = Math.atan2(relativeSpeed.vy, relativeSpeed.vx);
         const tangentAngus = Math.atan2(this.y - player.y, this.x - player.x);
@@ -307,13 +280,13 @@ class World {
         if (!this.localPlayer) {
             throw new Error(`Player not found ${localPlayerId}`);
         }
-        this.localPlayer.color = 'red';        
+        this.localPlayer.color = 'red';
     }
-    addPlayer(player){
+    addPlayer(player) {
         this.players.push(player);
-        for(let teamId of [0,1]){
+        for (let teamId of [0, 1]) {
             const team = this.players.filter(p => p.team == teamId);
-            for(let p of team){
+            for (let p of team) {
                 p.radius = 40 / team.length;
             }
         }
@@ -331,7 +304,7 @@ class World {
                 p.updateStep(ratio);
             }
             const update = this.ball.updateStep(ratio, this);
-            if(update != null){
+            if (update != null) {
                 updates.push(update);
                 break;
             }
