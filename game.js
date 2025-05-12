@@ -418,7 +418,7 @@ class Server {
     onConnect(conn) {
         if (!this.isARefreshOfExistingConnection(conn)) {
             this.connections.push(conn);
-            const player = new Player(this.world.players.length);
+            const player = new Player(conn.peer);
             this.world.players.push(player);
             this.initConnection(conn, player);
         }
@@ -448,12 +448,12 @@ class Server {
     }
     removeUnconnectedClients() {
         let changed = false;
-        for (let i = 0; i < this.connections.length; i++) {
+        for (let i = this.connections.length - 1; i >= 0; i--) {
             if (this.connections[i].peerConnection == null || this.connections[i].peerConnection.connectionState != 'connected') {
                 this.connections.splice(i, 1);
             }
         }
-        for (let i = 1; i < this.world.players.length; i++) {// index 0 is the server player
+        for (let i = this.world.players.length - 1; i > 0; i--) {// index 0 is the server player
             if (this.world.players[i].connection.peerConnection == null || this.world.players[i].connection.peerConnection.connectionState != 'connected') {
                 this.world.players.splice(i, 1);
                 changed = true;
@@ -512,6 +512,9 @@ class Client {
             || (this.connection.peerConnection.connectionState != 'connected' && (this.tickNumber - this.lastConnectTick) / 30 > 10)) {
             console.log(logName + ': connect to server');
             this.connection = this.peer.connect(server);
+            if(this.connection ==null){
+                return;
+            }
             this.lastConnectTick = this.tickNumber;
             const self = this;
             this.connection.on('data', function (data) {
